@@ -749,6 +749,8 @@ Copyright 2011, 2012, 2013 Lubomir Rintel
 
 Copyright 2012, 2013 Adam Stulpa, Jan Orel, Tomas Janousek
 
+Copyright 2013 Tomas Jirotka
+
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
@@ -761,6 +763,8 @@ Adam Stulpa C<adam.stulpa@gooddata.com>
 Jan Orel C<jan.orel@gooddata.com>
 
 Tomas Janousek C<tomi@nomi.cz>
+
+Tomas Jirotka C<tomjir@gmail.com>
 
 =cut
 
