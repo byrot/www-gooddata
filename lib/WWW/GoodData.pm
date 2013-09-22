@@ -767,6 +767,83 @@ sub create_report_definition
 	)->{uri};
 }
 
+=item B<set_mufs> PROJECT LABEL FORCE VERBOSE
+
+Automatically configure mandatory user filters with given label.
+Returns number of created user filters.
+
+=cut
+
+sub set_mufs
+{
+	my $self = shift;
+	my $project = shift;
+	my $label = shift;
+	my $force = shift;
+	my $verbose = shift;
+
+	my $obj_label = $self->{agent}->get ($label);
+	die 'Invalid attribute label object given'
+		unless exists $obj_label->{attributeDisplayForm};
+
+	# prepare uris
+	my $attribute = $obj_label->{attributeDisplayForm}->{content}->{formOf};
+	my $attr_els = $obj_label->{attributeDisplayForm}->{links}->{elements};
+	my $uf_uri = $self->get_uri (new URI ($project), qw/metadata userfilters/);
+
+	# get attribute elements and transform into hash structure
+	my %elements;
+	for (@{ $self->{agent}->get ($attr_els)->{attributeElements}->{elements} }) {
+		$elements{ $_->{title} } = $_->{uri};
+	}
+
+	# get project users
+	my $users = $self->get_users ($project, 1);
+
+	# get existing user filters if not override
+	my %mufs;
+	unless ($force) {
+		for (@{ $self->{agent}->get ($uf_uri)->{userFilters}->{items} }) {
+			$mufs{ $_->{user} } = $_->{userFilters};
+		}
+	}
+
+	# associate elements with users
+	my $cnt = 0;
+	for my $u (@$users) {
+		# skip user not having matching element
+		my $email = $u->{user}->{content}->{email};
+		next unless exists $elements{ $email };
+		my $user = $u->{user}->{links}->{self};
+		my $elem = $elements{ $u->{user}->{content}->{email} };
+
+		my $obj = $self->create_object_with_expression (
+			$project, undef, 'userFilter', "MUF - $email",
+			"Automatically generated Mandatory user filter on label $label",
+			"[$attribute] IN ([$elem])"
+		);
+
+		unless (ref $mufs{ $user } eq 'ARRAY') {
+			$mufs{ $user } = [];
+		}
+		push @{ $mufs{ $user } }, $obj;
+		++$cnt;
+
+		if ($verbose) {
+			print " - User: $user\n";
+			print "   Email: $email\n";
+			print "   Element: $elem\n";
+			print "   Filter: $obj\n";
+		}
+	}
+
+	$self->{agent}->post ( $uf_uri, { userFilters => { items => [
+		map { +{ user => $_, userFilters => $mufs{ $_ } } } keys %mufs
+	] } } );
+
+	return $cnt;
+}
+
 =item B<DESTROY>
 
 Log out the session with B<logout> unless not logged in.
