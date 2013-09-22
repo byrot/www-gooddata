@@ -123,6 +123,7 @@ my %actions = (
 	upload => \&upload,
 	mkobject => \&mkobject,
 	mkreportdef => \&mkreportdef,
+	automuf => \&automuf,
 	help => \&help,
 	shell => \&shell,
 );
@@ -889,6 +890,59 @@ sub mkreportdef
 
 	print $gdc->create_report_definition ($project, $uri, $title, $summary,
 		$metrics, $dim, $filters ) . "\n";
+}
+
+=head2 automuf
+
+Automatically create mandatory user filters.
+If you have an attribute User with label Email in your LDM,
+you may set user filters for project users such that they
+restrict user's reports to data referencing only his Email.
+The function creates and adds filters for all project users
+which are listed in the given label.
+
+=over4
+
+=item B<-l>, B<--label>
+
+Attribute label to be used.
+
+=item B<-f>, B<--force>
+
+Overwrite existing mandatory user filters.
+
+=item B<-v>, B<--verbose>
+
+Print unnecessary details during the process.
+
+=item B<-P>, B<--project>
+
+Set or override the project to act on.
+See global B<--project> option for the detailed description.
+
+=back
+
+=cut
+
+sub automuf
+{
+	my $this_project = $project;
+	my $label;
+	my $force;
+	my $verbose;
+
+	GetOptionsFromArray (\@_,
+		'l|label=s' => \$label,
+		'P|project=s' => \$this_project,
+		'f|force' => \$force,
+		'v|verbose' => \$verbose,
+	) or die 'Bad arguments to automuf';
+	$label = shift if @_;
+	die 'No project URI given' unless defined $this_project;
+	die 'No label URI given' unless defined $label;
+
+	my $n = $gdc->set_mufs ($this_project, $label, $force, $verbose);
+	print "Total number of created user filters: $n\n";
 }
 
 =head2 help
