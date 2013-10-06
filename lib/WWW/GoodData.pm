@@ -718,6 +718,43 @@ sub create_object_with_expression
 	)->{uri};
 }
 
+=item B<create_report_object> PROJECT URI TITLE SUMMARY REPORT_DEFINITION
+
+Create a new report object from given report definition object.
+
+=cut
+
+sub create_report_object
+{
+	my $self = shift;
+	my $project = shift;
+	my $uri = shift;
+	my $type = shift or die 'No type given';
+	my $title = shift or die 'No title given';
+	my $summary = shift || '';
+	my $definition = shift or die 'No definition given';
+
+	if (defined $uri) {
+		$uri = new URI ($uri);
+	} else {
+		$uri = $self->get_uri (new URI ($project), qw/metadata obj/);
+	}
+
+	return $self->{agent}->post (
+		$uri,
+		{ $type => {
+			content => {
+				definitions => [ $definition ],
+				domains => []
+			},
+			meta => {
+				summary => $summary,
+				title => $title,
+			}
+		}}
+	)->{uri};
+}
+
 =item B<create_report_definition> PROJECT URI TITLE SUMMARY METRICS DIM FILTERS
 
 Create a new reportDefinition in metadata.
@@ -767,7 +804,7 @@ sub create_report_definition
 	)->{uri};
 }
 
-=item B<set_mufs> PROJECT LABEL FORCE VERBOSE
+=item B<set_mufs> PROJECT LABEL GROUPING_LABEL FORCE VERBOSE
 
 Automatically configure mandatory user filters with given label.
 Returns number of created user filters.
@@ -779,6 +816,7 @@ sub set_mufs
 	my $self = shift;
 	my $project = shift;
 	my $label = shift;
+	my $group = shift;
 	my $force = shift;
 	my $verbose = shift;
 
@@ -786,16 +824,46 @@ sub set_mufs
 	die 'Invalid attribute label object given'
 		unless exists $obj_label->{attributeDisplayForm};
 
-	# prepare uris
-	my $attribute = $obj_label->{attributeDisplayForm}->{content}->{formOf};
-	my $attr_els = $obj_label->{attributeDisplayForm}->{links}->{elements};
-	my $uf_uri = $self->get_uri (new URI ($project), qw/metadata userfilters/);
+	my ($attribute, $attr_els, %labelgroup, %elements);
+
+	if (defined $group) {
+		my $obj_group = $self->{agent}->get ($group);
+		die 'Invalid attribute label object given for grouping'
+			unless exists $obj_group->{attributeDisplayForm};
+
+		$attribute = $obj_group->{attributeDisplayForm}->{content}->{formOf};
+		$attr_els = $obj_group->{attributeDisplayForm}->{links}->{elements};
+
+		my $rd = $self->create_report_definition ($project, undef,
+			'MUF: relation L->G', '', [], [$label, $group], []);
+		my $r = $self->create_report_object ($project, undef,
+			'report', 'MUF: relation L->G', '', $rd);
+		# get report results, and skip header
+		my @rows = split ("\n", $self->export_report ($r, 'csv'));
+		shift @rows;
+
+		for $r (@rows) {
+			my ($u, $g) = split (',', $r);
+			$u =~ s/^"(.+)"$/$1/;
+			$g =~ s/^"(.+)"$/$1/;
+			$labelgroup{ $u } = $g;
+		}
+
+
+	} else {
+		$attribute = $obj_label->{attributeDisplayForm}->{content}->{formOf};
+		$attr_els = $obj_label->{attributeDisplayForm}->{links}->{elements};
+	}
 
 	# get attribute elements and transform into hash structure
-	my %elements;
 	for (@{ $self->{agent}->get ($attr_els)->{attributeElements}->{elements} }) {
 		$elements{ $_->{title} } = $_->{uri};
+		unless (defined $group) {
+			$labelgroup{ $_->{title} } = $_->{title};
+		}
 	}
+
+	my $uf_uri = $self->get_uri (new URI ($project), qw/metadata userfilters/);
 
 	# get project users
 	my $users = $self->get_users ($project, 1);
@@ -808,26 +876,34 @@ sub set_mufs
 		}
 	}
 
+	# list of created MUFs
+	my %created;
+
 	# associate elements with users
-	my $cnt = 0;
 	for my $u (@$users) {
 		# skip user not having matching element
 		my $email = $u->{user}->{content}->{email};
-		next unless exists $elements{ $email };
+		next unless exists $labelgroup{ $email };
+		next unless exists $elements{ $labelgroup{$email} };
 		my $user = $u->{user}->{links}->{self};
-		my $elem = $elements{ $u->{user}->{content}->{email} };
+		my $elem = $elements{ $labelgroup{$email} };
+		my $obj;
 
-		my $obj = $self->create_object_with_expression (
-			$project, undef, 'userFilter', "MUF - $email",
-			"Automatically generated Mandatory user filter on label $label",
-			"[$attribute] IN ([$elem])"
-		);
+		if (defined $created{ $elem }) {
+			$obj = $created{ $elem };
+		} else {
+			$obj = $self->create_object_with_expression (
+				$project, undef, 'userFilter', "MUF - $email",
+				"Automatically generated Mandatory user filter on label $label",
+				"[$attribute] IN ([$elem])"
+			);
+			$created{ $elem } = $obj;
+		}
 
 		unless (ref $mufs{ $user } eq 'ARRAY') {
 			$mufs{ $user } = [];
 		}
 		push @{ $mufs{ $user } }, $obj;
-		++$cnt;
 
 		if ($verbose) {
 			print " - User: $user\n";
@@ -841,7 +917,7 @@ sub set_mufs
 		map { +{ user => $_, userFilters => $mufs{ $_ } } } keys %mufs
 	] } } );
 
-	return $cnt;
+	return scalar keys %created;
 }
 
 =item B<DESTROY>

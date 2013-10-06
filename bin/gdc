@@ -942,7 +942,12 @@ which are listed in the given label.
 
 =item B<-l>, B<--label>
 
-Attribute label to be used.
+Attribute label to be used to identify values with project users.
+
+=item B<-g>, B<--group>
+
+Attribute label to be used to group users, and create single filter
+for all users in the group. Any user can see data for the whole group.
 
 =item B<-f>, B<--force>
 
@@ -965,11 +970,13 @@ sub automuf
 {
 	my $this_project = $project;
 	my $label;
+	my $group;
 	my $force;
 	my $verbose;
 
 	GetOptionsFromArray (\@_,
 		'l|label=s' => \$label,
+		'g|group=s' => \$group,
 		'P|project=s' => \$this_project,
 		'f|force' => \$force,
 		'v|verbose' => \$verbose,
@@ -978,7 +985,7 @@ sub automuf
 	die 'No project URI given' unless defined $this_project;
 	die 'No label URI given' unless defined $label;
 
-	my $n = $gdc->set_mufs ($this_project, $label, $force, $verbose);
+	my $n = $gdc->set_mufs ($this_project, $label, $group, $force, $verbose);
 	print "Total number of created user filters: $n\n";
 }
 
